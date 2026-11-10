@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+    --font-display: var(--font-space-grotesk), system-ui, sans-serif;
+    --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+  }
+
+  body {
+    background-color: #090b0e;
+    color: #f1f5f9;
+    font-family: var(--font-sans);
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Tactical subtle background grid */
+.tactical-grid-bg {
+  background-image: radial-gradient(rgba(139, 92, 246, 0.08) 1px, transparent 1px),
+    linear-gradient(to right, rgba(30, 38, 51, 0.32) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(30, 38, 51, 0.32) 1px, transparent 1px);
+  background-size: 24px 24px, 48px 48px, 48px 48px;
+}
+
+/* Sleek terminal scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #090b0e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e2633;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}

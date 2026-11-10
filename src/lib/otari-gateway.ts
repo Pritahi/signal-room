@@ -48,14 +48,67 @@ function estimateStageCostUsd(
 }
 
 class BudgetExceededError extends Error {
-  constructor(public readonly spentUsd: number, public readonly capUsd: number) {
-    super(`Otari key budget cap reached: $${spentUsd.toFixed(4)} of $${capUsd.toFixed(2)}`);
+  constructor(
+    public readonly spentUsd: number,
+    public readonly capUsd: number,
+    public readonly source: "local-counter" | "otari-server" = "local-counter",
+    detail?: string
+  ) {
+    super(
+      source === "otari-server"
+        ? `Otari server enforced the key budget: ${detail || "budget exceeded"}`
+        : `Otari key budget cap reached: $${spentUsd.toFixed(4)} of $${capUsd.toFixed(2)}`
+    );
+  }
+}
+
+function looksLikeBudgetRejection(status: number, body: string): boolean {
+  if (status === 402) return true;
+  if (status !== 403 && status !== 429 && status !== 400) return false;
+  return /budget|ceiling|spend|insufficient|balance/i.test(body);
+}
+
+// Otari built-in Web Search (otari_web_search, tavily backend) - server-side
+// search API. Stage 1's error signatures are searched and the top results are
+// injected into Stage 2's prompt, so the remediation plan cites current docs.
+async function otariWebSearch(opts: {
+  baseUrl: string;
+  apiKey: string;
+  query: string;
+  maxResults: number;
+  timeoutMs: number;
+}): Promise<{ results: { title: string; url: string; snippet: string }[]; tool: string } | null> {
+  try {
+    const res = await fetch(`${opts.baseUrl}/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${opts.apiKey}`,
+        "Otari-Key": opts.apiKey,
+      },
+      body: JSON.stringify({ query: opts.query, max_results: opts.maxResults }),
+      signal: AbortSignal.timeout(opts.timeoutMs),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const results = Array.isArray(data?.results) ? data.results : [];
+    return {
+      results: results.slice(0, opts.maxResults).map((r: any) => ({
+        title: String(r?.title || "").slice(0, 140),
+        url: String(r?.url || "").slice(0, 300),
+        snippet: String(r?.snippet || "").slice(0, 400),
+      })),
+      tool: String(data?.search_tool || "otari_web_search"),
+    };
+  } catch {
+    return null;
   }
 }
 
 interface GatewayCallOutcome {
   data: any;
   modelUsed: string;
+  servedModel?: string;
   latencyMs: number;
   fellBack: boolean;
 }
@@ -94,7 +147,16 @@ async function callGatewayWithFallback(opts: {
       signal: AbortSignal.timeout(opts.timeoutMs),
     });
     if (!res.ok) {
-      throw new Error(`${opts.stageLabel} on ${model}: HTTP ${res.status}`);
+      const errBody = await res.text().catch(() => "");
+      if (looksLikeBudgetRejection(res.status, errBody)) {
+        throw new BudgetExceededError(
+          sessionSpendUsd.total,
+          BUDGET_CAP_USD,
+          "otari-server",
+          `HTTP ${res.status}: ${errBody.slice(0, 200)}`
+        );
+      }
+      throw new Error(`${opts.stageLabel} on ${model}: HTTP ${res.status} ${errBody.slice(0, 120)}`);
     }
     return { data: await res.json(), latencyMs: Date.now() - start };
   };
@@ -105,7 +167,7 @@ async function callGatewayWithFallback(opts: {
     sessionSpendUsd.total += estimateStageCostUsd(
       opts.primaryModel, u.prompt_tokens || 0, u.completion_tokens || 0
     );
-    return { data: r.data, modelUsed: opts.primaryModel, latencyMs: r.latencyMs, fellBack: false };
+    return { data: r.data, modelUsed: opts.primaryModel, servedModel: r.data?.model, latencyMs: r.latencyMs, fellBack: false };
   } catch (primaryErr) {
     if (primaryErr instanceof BudgetExceededError) throw primaryErr;
     // Fallback: retry the same stage on the other model via the same gateway.
@@ -120,7 +182,7 @@ async function callGatewayWithFallback(opts: {
     opts.fallbackEvents.push(
       `${opts.stageLabel}: ${opts.primaryModel} failed (${primaryErr instanceof Error ? primaryErr.message : "error"}); retried on ${opts.fallbackModel} via Otari gateway`
     );
-    return { data: r.data, modelUsed: opts.fallbackModel, latencyMs: r.latencyMs, fellBack: true };
+    return { data: r.data, modelUsed: opts.fallbackModel, servedModel: r.data?.model, latencyMs: r.latencyMs, fellBack: true };
   }
 }
 
@@ -156,7 +218,10 @@ export function getServerGatewayStatus() {
   return {
     hasServerApiKey: Boolean(envKey.trim()),
     defaultBaseUrl: envBaseUrl,
-    model1Default: process.env.OTARI_MODEL_1 || MODEL_1_ID,
+    // Stage 1 routes through the Otari workspace routing policy
+    // "signal-room-triage" (dashboard > Routing): the gateway serves it with
+    // Llama-3.3-70B on Bedrock and falls back to Qwen3-Coder-30B server-side.
+    model1Default: process.env.OTARI_MODEL_1 || "signal-room-triage",
     model2Default: process.env.OTARI_MODEL_2 || MODEL_2_ID,
   };
 }
@@ -270,10 +335,51 @@ ${rawLogs}`;
         ? rawSeverity
         : baselineFallback.severity;
 
+    // OTARI WEB SEARCH (otari_web_search): search current web/runbooks for the
+    // top error signature, then feed results into Stage 2's planning prompt.
+    const sigs: string[] =
+      Array.isArray(parsed1?.errorSignatures) && parsed1.errorSignatures.length > 0
+        ? parsed1.errorSignatures.slice(0, 2)
+        : baselineFallback.errorSignatures.slice(0, 2);
+    const svc: string =
+      (Array.isArray(parsed1?.affectedServices) && parsed1.affectedServices[0]) ||
+      baselineFallback.affectedServices[0] ||
+      "production service";
+    const searchQuery = `${svc} ${sigs[0] || "outage"} runbook remediation`;
+    const search = await otariWebSearch({
+      baseUrl: effectiveBaseUrl,
+      apiKey: effectiveApiKey,
+      query: searchQuery,
+      maxResults: 5,
+      timeoutMs: 15000,
+    });
+    if (search) {
+      fallbackEvents.push(
+        `Otari web search (${search.tool}): "${searchQuery}" -> ${search.results.length} results injected into Stage 2`
+      );
+    } else {
+      fallbackEvents.push(
+        `Otari web search unavailable for "${searchQuery}"; Stage 2 proceeded without web context`
+      );
+    }
+    const webContext =
+      search && search.results.length > 0
+        ? `
+
+CURRENT WEB CONTEXT (via Otari otari_web_search, query: "${searchQuery}"):
+` +
+          search.results
+            .slice(0, 3)
+            .map((r, i) => `${i + 1}. ${r.title} - ${r.url}\n   ${r.snippet}`)
+            .join("\n") +
+          `\nUse this current documentation to ground the remediation commands.\n`
+        : "";
+
     // STAGE 2: Model 2 (Root-Cause Hypotheses + Remediation Runbook + Postmortem Draft)
     const startM2 = Date.now();
     const stage2Prompt = `You are Model 2 (Root-Cause & Remediation Planner) in Signal Room, an incident-triage copilot.
 Model 1 (${model1}) classified this incident as ${stage1Severity}: "${stage1Summary}".
+${webContext}
 
 Given the raw logs and Model 1 classification, return ONLY valid JSON matching this schema:
 {
@@ -369,16 +475,25 @@ ${rawLogs}`;
         gatewayProvider: "Mozilla Otari / any-llm Live Gateway",
         endpointUrl: endpoint,
         routingPolicy:
-          "stage-routed: classify->fast-instruct model, plan->code model; auto-fallback to the sibling model on failure",
+          "Otari workspace routing policy 'signal-room-triage' (Llama-3.3-70B Bedrock -> Qwen3-Coder-30B Bedrock, server-side) + in-app cross-model retry on failure",
         fallbackEvents: fallbackEvents.length ? fallbackEvents : undefined,
+        webSearch: search
+          ? {
+              tool: `${search.tool} (Otari otari_web_search)`,
+              query: searchQuery,
+              resultCount: search.results.length,
+              topResults: search.results.slice(0, 3).map((r) => ({ title: r.title, url: r.url })),
+              usedInStage: "Stage 2 (root-cause & remediation) prompt",
+            }
+          : undefined,
         budget: {
           capUsd: BUDGET_CAP_USD > 0 ? BUDGET_CAP_USD : null,
           sessionSpentUsd: Number(sessionSpendUsd.total.toFixed(6)),
           exceeded: false,
         },
         model1: {
-          id: call1.modelUsed,
-          role: "Incident Summarizer & Severity Classifier",
+          id: call1.servedModel || call1.modelUsed,
+          role: `Incident Summarizer & Severity Classifier (requested: ${call1.modelUsed})`,
           latencyMs: latencyM1,
           promptTokens:
             data1?.usage?.prompt_tokens ||
@@ -389,8 +504,8 @@ ${rawLogs}`;
           status: call1.fellBack ? "completed-via-fallback" : "completed",
         },
         model2: {
-          id: call2.modelUsed,
-          role: "Root-Cause & Remediation Planner",
+          id: call2.servedModel || call2.modelUsed,
+          role: `Root-Cause & Remediation Planner (requested: ${call2.modelUsed})`,
           latencyMs: latencyM2,
           promptTokens:
             data2?.usage?.prompt_tokens ||
@@ -418,7 +533,9 @@ ${rawLogs}`;
           exceeded: budgetHit,
         },
         fallbackEvents: budgetHit
-          ? [`Budget cap enforced: live calls stopped at $${sessionSpendUsd.total.toFixed(4)} of $${BUDGET_CAP_USD.toFixed(2)}; served deterministic fallback instead of spending more.`]
+          ? [err instanceof BudgetExceededError && err.source === "otari-server"
+              ? `Otari server rejected the call: ${err.message}. Signal Room caught the rejection and served the deterministic fallback instead of failing the triage.`
+              : `Budget cap enforced: live calls stopped at $${sessionSpendUsd.total.toFixed(4)} of $${BUDGET_CAP_USD.toFixed(2)}; served deterministic fallback instead of spending more.`]
           : [`Live gateway call failed (${err instanceof Error ? err.message : "error"}); served deterministic fallback.`],
         gatewayProvider:
           "Mozilla Otari / any-llm Gateway (Auto-Fallback to Mock)",

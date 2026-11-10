@@ -779,7 +779,7 @@ export function SignalRoomClient({
                     <span>
                       {pipelineStage === 1
                         ? "Stage 1/2: Llama-3.3-70B Classifying Severity & Timeline..."
-                        : "Stage 2/2: Qwen-2.5-Coder-32B Synthesizing Root Cause & Postmortem..."}
+                        : "Stage 2/2: Qwen3-Coder-30B Synthesizing Root Cause & Postmortem..."}
                     </span>
                   </>
                 ) : (
@@ -849,6 +849,39 @@ export function SignalRoomClient({
                     </div>
                   </div>
                 </div>
+
+                {/* Otari feature chips: budget cap, web search, fallback */}
+                {(activeIncident.telemetry.budget?.capUsd != null ||
+                  activeIncident.telemetry.webSearch ||
+                  (activeIncident.telemetry.fallbackEvents?.length ?? 0) > 0) && (
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-mono">
+                    {activeIncident.telemetry.budget?.capUsd != null && (
+                      <span
+                        className={`rounded border px-1.5 py-0.5 ${
+                          activeIncident.telemetry.budget.exceeded
+                            ? "border-[#F43F5E] text-[#F43F5E]"
+                            : "border-[#1E2633] text-[#94A3B8]"
+                        }`}
+                      >
+                        KEY BUDGET ${activeIncident.telemetry.budget.sessionSpentUsd.toFixed(4)} / ${activeIncident.telemetry.budget.capUsd.toFixed(2)}
+                        {activeIncident.telemetry.budget.exceeded ? " - CAP ENFORCED" : ""}
+                      </span>
+                    )}
+                    {activeIncident.telemetry.webSearch && (
+                      <span className="rounded border border-[#38BDF8]/40 px-1.5 py-0.5 text-[#38BDF8]">
+                        OTARI WEB SEARCH: {activeIncident.telemetry.webSearch.resultCount} results into Stage 2
+                      </span>
+                    )}
+                    {(activeIncident.telemetry.fallbackEvents?.length ?? 0) > 0 && (
+                      <span
+                        className="rounded border border-[#F59E0B]/40 px-1.5 py-0.5 text-[#F59E0B]"
+                        title={activeIncident.telemetry.fallbackEvents!.join("\n")}
+                      >
+                        ROUTING/FALLBACK EVENTS x{activeIncident.telemetry.fallbackEvents!.length}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Expandable Raw Gateway Telemetry Inspector */}
                 <div className="mt-2.5 flex items-center justify-between border-t border-[#1E2633] pt-2 text-[11px] font-mono">

@@ -61,6 +61,13 @@ export interface GatewayTelemetry {
   };
   routingPolicy?: string;
   fallbackEvents?: string[];
+  webSearch?: {
+    tool: string;
+    query: string;
+    resultCount: number;
+    topResults: { title: string; url: string }[];
+    usedInStage: string;
+  };
   budget?: {
     capUsd: number | null;
     sessionSpentUsd: number;

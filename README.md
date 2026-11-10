@@ -30,6 +30,18 @@
 
 ---
 
+## Otari features used (all live, against the hosted gateway)
+
+- **OpenAI-compatible Chat Completions** (`POST /api/v1/chat/completions`) - the 2-stage pipeline itself, with usage/cost telemetry parsed from every response.
+- **Model Routing policy** (dashboard > Routing > Policies): `signal-room-triage` - callers send `model: "signal-room-triage"`; Otari serves it with Llama 3.3 70B Instruct (Amazon Bedrock) and falls back server-side to Qwen3-Coder 30B-A3B Instruct. Stage 1 calls this policy by default, so routing + fallback execute inside Otari and appear in the dashboard's Requests table ROUTING column. The app adds its own cross-model retry as a second net and records every fallback event in telemetry.
+- **Per-key Budget** (dashboard > API keys): the app's `signal-room` key carries a real USD 0.25/month budget. When Otari rejects a call for budget (HTTP 402, or a budget/ceiling body on 400/403/429), the app catches it, shows a "KEY BUDGET - CAP ENFORCED" chip, and serves the deterministic fallback instead of failing the triage.
+- **Web Search** (`otari_web_search`, tavily backend): Stage 1's extracted error signatures are searched via Otari's server-side `POST /api/v1/search`, and the top results are injected into Stage 2's remediation prompt so runbook steps cite current documentation.
+- **Observability** (dashboard > Overview > Requests): every app call shows up with key, model, routing, tokens, cost and status.
+
+Verification details and dashboard evidence: `docs/evidence/live-otari-verification.md`.
+
+---
+
 ## Setup & Local Development
 
 ### 1. Prerequisites
@@ -54,7 +66,9 @@ OTARI_BASE_URL=https://otari.ai/api/v1
 OTARI_API_KEY=
 
 # Optional: Override open-weight model identifiers
-OTARI_MODEL_1=meta/llama-3.3-70b-instruct
+# (default Stage 1 routes via the Otari policy "signal-room-triage",
+#  which resolves to meta/llama-3.3-70b-instruct with server-side fallback)
+OTARI_MODEL_1=signal-room-triage
 OTARI_MODEL_2=alibaba/qwen3-coder-30b-a3b-instruct
 ```
 

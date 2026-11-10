@@ -28,8 +28,8 @@ export interface PresetScenario {
   telemetry: GatewayTelemetry;
 }
 
-export const MODEL_1_ID = "meta-llama/Llama-3.3-70B-Instruct";
-export const MODEL_2_ID = "Qwen/Qwen2.5-Coder-32B-Instruct";
+export const MODEL_1_ID = "meta/llama-3.3-70b-instruct";
+export const MODEL_2_ID = "alibaba/qwen3-coder-30b-a3b-instruct";
 
 export const PRESET_SCENARIOS: PresetScenario[] = [
   {
@@ -234,7 +234,7 @@ export const PRESET_SCENARIOS: PresetScenario[] = [
 **Date:** 2026-03-29  
 **Severity:** SEV-1 (Critical)  
 **Status:** Mitigated / Postmortem Draft  
-**AI Triage Pipeline:** \`meta-llama/Llama-3.3-70B-Instruct\` (Classifier) + \`Qwen/Qwen2.5-Coder-32B-Instruct\` (Remediation) via Mozilla Otari \`any-llm\` Gateway
+**AI Triage Pipeline:** \`meta/llama-3.3-70b-instruct\` (Classifier) + \`alibaba/qwen3-coder-30b-a3b-instruct\` (Remediation) via Mozilla Otari \`any-llm\` Gateway
 
 ---
 
@@ -270,7 +270,7 @@ On March 29, 2026 at 14:01 UTC, deployment of \`auth-service:v2.14.0\` introduce
     telemetry: {
       mode: "mock",
       gatewayProvider: "Mozilla Otari / any-llm Gateway (Deterministic Mock)",
-      endpointUrl: "https://gateway.otari.mozilla.ai/v1/chat/completions",
+      endpointUrl: "https://otari.ai/api/v1/chat/completions",
       model1: {
         id: MODEL_1_ID,
         role: "Incident Summarizer & Severity Classifier",
@@ -452,7 +452,7 @@ On March 29, 2026 at 14:01 UTC, deployment of \`auth-service:v2.14.0\` introduce
 **Date:** 2026-03-29  
 **Severity:** SEV-2 (High)  
 **Status:** Mitigated / Postmortem Draft  
-**AI Triage Pipeline:** \`meta-llama/Llama-3.3-70B-Instruct\` (Classifier) + \`Qwen/Qwen2.5-Coder-32B-Instruct\` (Remediation) via Mozilla Otari \`any-llm\` Gateway
+**AI Triage Pipeline:** \`meta/llama-3.3-70b-instruct\` (Classifier) + \`alibaba/qwen3-coder-30b-a3b-instruct\` (Remediation) via Mozilla Otari \`any-llm\` Gateway
 
 ---
 
@@ -484,7 +484,7 @@ At 16:10:00 UTC, an automated HashiCorp Vault rotation updated \`stripe/webhook_
     telemetry: {
       mode: "mock",
       gatewayProvider: "Mozilla Otari / any-llm Gateway (Deterministic Mock)",
-      endpointUrl: "https://gateway.otari.mozilla.ai/v1/chat/completions",
+      endpointUrl: "https://otari.ai/api/v1/chat/completions",
       model1: {
         id: MODEL_1_ID,
         role: "Incident Summarizer & Severity Classifier",
@@ -666,7 +666,7 @@ At 16:10:00 UTC, an automated HashiCorp Vault rotation updated \`stripe/webhook_
 **Date:** 2026-03-29  
 **Severity:** SEV-1 (Critical)  
 **Status:** Mitigated / Postmortem Draft  
-**AI Triage Pipeline:** \`meta-llama/Llama-3.3-70B-Instruct\` (Classifier) + \`Qwen/Qwen2.5-Coder-32B-Instruct\` (Remediation) via Mozilla Otari \`any-llm\` Gateway
+**AI Triage Pipeline:** \`meta/llama-3.3-70b-instruct\` (Classifier) + \`alibaba/qwen3-coder-30b-a3b-instruct\` (Remediation) via Mozilla Otari \`any-llm\` Gateway
 
 ---
 
@@ -698,7 +698,7 @@ At 18:40:02 UTC, a 480MB unchunked document batch (\`batch_id=batch_99281\`, \`c
     telemetry: {
       mode: "mock",
       gatewayProvider: "Mozilla Otari / any-llm Gateway (Deterministic Mock)",
-      endpointUrl: "https://gateway.otari.mozilla.ai/v1/chat/completions",
+      endpointUrl: "https://otari.ai/api/v1/chat/completions",
       model1: {
         id: MODEL_1_ID,
         role: "Incident Summarizer & Severity Classifier",
@@ -725,7 +725,7 @@ At 18:40:02 UTC, a 480MB unchunked document batch (\`batch_id=batch_99281\`, \`c
  * Dynamic Mock Dual-Model Triage Engine:
  * If the user pastes one of the 3 preset scenarios (or close to it), returns that rich scenario with updated timestamps.
  * If the user pastes ANY custom logs/alerts, parses lines, timestamps, services, error codes, and constructs a tailored
- * dual-model triage output (`Llama-3.3-70B-Instruct` + `Qwen-2.5-Coder-32B-Instruct`).
+ * dual-model triage output (`llama-3.3-70b-instruct` + `qwen3-coder-30b-a3b-instruct`).
  */
 export function runMockDualModelTriage(
   rawLogs: string,
@@ -983,7 +983,7 @@ ${nextSteps
     telemetry: {
       mode: "mock",
       gatewayProvider: "Mozilla Otari / any-llm Gateway (Deterministic Mock)",
-      endpointUrl: "https://gateway.otari.mozilla.ai/v1/chat/completions",
+      endpointUrl: "https://otari.ai/api/v1/chat/completions",
       model1: {
         id: MODEL_1_ID,
         role: "Incident Summarizer & Severity Classifier",

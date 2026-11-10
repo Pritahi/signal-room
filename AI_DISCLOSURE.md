@@ -16,8 +16,8 @@ Signal Room uses a sequential **two-model open-weight pipeline** accessed via a 
 
 | Stage | Open-Weight Model | Responsibility | Output Artifacts |
 | :--- | :--- | :--- | :--- |
-| **Stage 1** | `meta-llama/Llama-3.3-70B-Instruct` | Incident Summarizer & Severity Classifier | Severity (`SEV-1`..`SEV-4`), Confidence %, Executive Summary, Blast Radius, Affected Services, Chronological Timeline |
-| **Stage 2** | `Qwen/Qwen2.5-Coder-32B-Instruct` | Root-Cause & Remediation Planner | Ranked Root-Cause Hypotheses, Verification CLI Commands, Prioritized Remediation Runbook, Blameless Postmortem Markdown |
+| **Stage 1** | `meta/llama-3.3-70b-instruct` | Incident Summarizer & Severity Classifier | Severity (`SEV-1`..`SEV-4`), Confidence %, Executive Summary, Blast Radius, Affected Services, Chronological Timeline |
+| **Stage 2** | `alibaba/qwen3-coder-30b-a3b-instruct` | Root-Cause & Remediation Planner | Ranked Root-Cause Hypotheses, Verification CLI Commands, Prioritized Remediation Runbook, Blameless Postmortem Markdown |
 
 ## 3. Deterministic Mock Mode & Data Privacy
 - When no `OTARI_API_KEY` or `ANY_LLM_API_KEY` is provided, Signal Room defaults to **Deterministic Mock Mode**.

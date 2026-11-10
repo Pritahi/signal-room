@@ -45,7 +45,7 @@ export function getServerGatewayStatus() {
   const envBaseUrl =
     process.env.OTARI_BASE_URL ||
     process.env.ANY_LLM_BASE_URL ||
-    "https://gateway.otari.mozilla.ai/v1";
+    "https://otari.ai/api/v1";
 
   return {
     hasServerApiKey: Boolean(envKey.trim()),

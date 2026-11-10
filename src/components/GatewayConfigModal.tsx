@@ -123,7 +123,7 @@ export function GatewayConfigModal({
               onChange={(e) =>
                 onChangeSettings({ ...settings, baseUrl: e.target.value })
               }
-              placeholder="https://gateway.otari.mozilla.ai/v1"
+              placeholder="https://otari.ai/api/v1"
               className="w-full rounded-md border border-[#1E2633] bg-[#090B0E] px-3 py-2 font-mono text-xs text-white focus:border-[#8B5CF6] focus:outline-none"
             />
           </div>

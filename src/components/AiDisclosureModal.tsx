@@ -67,7 +67,7 @@ export function AiDisclosureModal({ isOpen, onClose }: AiDisclosureModalProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="rounded border border-[#1E2633] bg-[#11151C] p-3">
                 <div className="font-mono text-xs font-semibold text-[#38BDF8]">
-                  STAGE 1 // meta-llama/Llama-3.3-70B-Instruct
+                  STAGE 1 // meta/llama-3.3-70b-instruct
                 </div>
                 <div className="text-xs font-medium text-white mt-1">
                   Triage Summarizer & Severity Classifier
@@ -78,7 +78,7 @@ export function AiDisclosureModal({ isOpen, onClose }: AiDisclosureModalProps) {
               </div>
               <div className="rounded border border-[#1E2633] bg-[#11151C] p-3">
                 <div className="font-mono text-xs font-semibold text-[#FF6B2B]">
-                  STAGE 2 // Qwen/Qwen2.5-Coder-32B-Instruct
+                  STAGE 2 // alibaba/qwen3-coder-30b-a3b-instruct
                 </div>
                 <div className="text-xs font-medium text-white mt-1">
                   Root-Cause & Remediation Planner

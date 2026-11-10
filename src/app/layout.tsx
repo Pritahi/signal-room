@@ -24,7 +24,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Signal Room // Incident-Triage Copilot — Mozilla Otari 'Devs Wilding Online'",
   description:
-    "Dual open-weight LLM incident-triage war room powered by Mozilla Otari / any-llm gateway (Llama-3.3-70B-Instruct + Qwen-2.5-Coder-32B-Instruct) with deterministic mock mode.",
+    "Dual open-weight LLM incident-triage war room powered by Mozilla Otari / any-llm gateway (llama-3.3-70b-instruct + qwen3-coder-30b-a3b-instruct) with deterministic mock mode.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -2,12 +2,12 @@
 
 **Signal Room** is an incident-triage copilot built for the **Mozilla Otari 'Devs Wilding Online' Hackathon**. Engineers paste raw container logs, alerts, or stack traces (or load one of 3 realistic production outage scenarios), and Signal Room orchestrates a **2-stage open-weight model pipeline** via a Mozilla Otari / `any-llm` OpenAI-compatible gateway:
 
-1. **Model 1 (`meta-llama/Llama-3.3-70B-Instruct` — Summarizer & Severity Classifier)**
+1. **Model 1 (`meta/llama-3.3-70b-instruct` — Summarizer & Severity Classifier)**
    - Summarizes unstructured multi-service telemetry
    - Classifies incident severity (`SEV-1` Critical, `SEV-2` High, `SEV-3` Degraded, `SEV-4` Info) with a confidence score
    - Identifies customer/system blast radius, affected services, and primary error signatures
    - Extracts a chronological **Incident Timeline** with UTC timestamps and initial trigger detection
-2. **Model 2 (`Qwen/Qwen2.5-Coder-32B-Instruct` — Root-Cause & Remediation Planner)**
+2. **Model 2 (`alibaba/qwen3-coder-30b-a3b-instruct` — Root-Cause & Remediation Planner)**
    - Ingests the raw logs + Model 1's structured classification
    - Generates ranked **Root-Cause Hypotheses** with probability scores, mechanisms, supporting log evidence, and CLI verification commands
    - Proposes an interactive **Remediation Runbook / Next Steps** (`IMMEDIATE`, `STABILIZE`, `PREVENT`) with copyable CLI commands (`kubectl`, `redis-cli`, `stripe`, etc.) and rollback safety notes
@@ -50,12 +50,12 @@ DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/app_db
 
 # Optional: Mozilla Otari / any-llm OpenAI-compatible gateway settings
 # Leave blank to run in Deterministic Mock Mode (100% functional without keys)
-OTARI_BASE_URL=https://gateway.otari.mozilla.ai/v1
+OTARI_BASE_URL=https://otari.ai/api/v1
 OTARI_API_KEY=
 
 # Optional: Override open-weight model identifiers
-OTARI_MODEL_1=meta-llama/Llama-3.3-70B-Instruct
-OTARI_MODEL_2=Qwen/Qwen2.5-Coder-32B-Instruct
+OTARI_MODEL_1=meta/llama-3.3-70b-instruct
+OTARI_MODEL_2=alibaba/qwen3-coder-30b-a3b-instruct
 ```
 
 ### 4. Push Database Schema & Run
@@ -106,8 +106,8 @@ This project was created for the **Mozilla Otari 'Devs Wilding Online' Hackathon
    - Portions of the Next.js App Router TypeScript code, Tailwind CSS dark war-room UI components, Drizzle ORM database schema, and synthetic SRE incident log fixtures were drafted and refined with AI coding copilot assistance.
 2. **Runtime Open-Weight LLM Architecture:**
    - Signal Room orchestrates two open-weight models via an `any-llm` / OpenAI-compatible gateway:
-     - **Stage 1 (`meta-llama/Llama-3.3-70B-Instruct`):** Summarizes logs, classifies severity (`SEV-1` to `SEV-4`), and extracts chronological timeline events.
-     - **Stage 2 (`Qwen/Qwen2.5-Coder-32B-Instruct`):** Generates ranked root-cause guesses, remediation runbook steps, and a blameless postmortem draft.
+     - **Stage 1 (`meta/llama-3.3-70b-instruct`):** Summarizes logs, classifies severity (`SEV-1` to `SEV-4`), and extracts chronological timeline events.
+     - **Stage 2 (`alibaba/qwen3-coder-30b-a3b-instruct`):** Generates ranked root-cause guesses, remediation runbook steps, and a blameless postmortem draft.
 3. **Privacy & Mock Mode Guarantee:**
    - When running in Mock Mode (the default when no API key is provided), **zero log data is transmitted over the network**. All parsing and triage synthesis run locally and deterministically.
 4. **Human-in-the-Loop Operational Safety:**

@@ -49,7 +49,7 @@ export interface GatewayTelemetry {
     latencyMs: number;
     promptTokens: number;
     completionTokens: number;
-    status: "completed" | "fallback-mock";
+    status: "completed" | "fallback-mock" | "completed-via-fallback";
   };
   model2: {
     id: string;
@@ -57,7 +57,14 @@ export interface GatewayTelemetry {
     latencyMs: number;
     promptTokens: number;
     completionTokens: number;
-    status: "completed" | "fallback-mock";
+    status: "completed" | "fallback-mock" | "completed-via-fallback";
+  };
+  routingPolicy?: string;
+  fallbackEvents?: string[];
+  budget?: {
+    capUsd: number | null;
+    sessionSpentUsd: number;
+    exceeded: boolean;
   };
   totalDurationMs: number;
   timestampIso: string;

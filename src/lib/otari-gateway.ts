@@ -18,6 +18,112 @@ export interface GatewayConfigInput {
   model2Id?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Otari feature: routing policy with cross-model fallback + per-key budget cap
+// ---------------------------------------------------------------------------
+// Stage routing policy: Stage 1 (classification) is routed to the fast
+// instruction-tuned model; Stage 2 (root-cause planning) is routed to the
+// code-specialized model. If the routed model fails or times out, the same
+// stage is retried once on the OTHER model through the same Otari gateway -
+// a real fallback policy executed per-request, recorded in telemetry.
+
+const MODEL_PRICE_PER_MILLION_USD: Record<string, { in: number; out: number }> = {
+  "meta/llama-3.3-70b-instruct": { in: 0.1, out: 0.32 },
+  "alibaba/qwen3-coder-30b-a3b-instruct": { in: 0.07, out: 0.28 },
+};
+const DEFAULT_PRICE_PER_MILLION_USD = { in: 0.25, out: 0.75 };
+
+// Per-key budget cap: the Otari API key used by this app is limited to this
+// spend per server session. 0 disables the cap. Overridable via env.
+const BUDGET_CAP_USD = Number(process.env.OTARI_BUDGET_USD || "0.25");
+const sessionSpendUsd = { total: 0 };
+
+function estimateStageCostUsd(
+  model: string,
+  promptTokens: number,
+  completionTokens: number
+): number {
+  const price = MODEL_PRICE_PER_MILLION_USD[model] || DEFAULT_PRICE_PER_MILLION_USD;
+  return (promptTokens * price.in + completionTokens * price.out) / 1_000_000;
+}
+
+class BudgetExceededError extends Error {
+  constructor(public readonly spentUsd: number, public readonly capUsd: number) {
+    super(`Otari key budget cap reached: $${spentUsd.toFixed(4)} of $${capUsd.toFixed(2)}`);
+  }
+}
+
+interface GatewayCallOutcome {
+  data: any;
+  modelUsed: string;
+  latencyMs: number;
+  fellBack: boolean;
+}
+
+async function callGatewayWithFallback(opts: {
+  endpoint: string;
+  apiKey: string;
+  primaryModel: string;
+  fallbackModel: string;
+  temperature: number;
+  system: string;
+  user: string;
+  timeoutMs: number;
+  stageLabel: string;
+  fallbackEvents: string[];
+}): Promise<GatewayCallOutcome> {
+  if (BUDGET_CAP_USD > 0 && sessionSpendUsd.total >= BUDGET_CAP_USD) {
+    throw new BudgetExceededError(sessionSpendUsd.total, BUDGET_CAP_USD);
+  }
+  const attempt = async (model: string) => {
+    const start = Date.now();
+    const res = await fetch(opts.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${opts.apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: opts.temperature,
+        messages: [
+          { role: "system", content: opts.system },
+          { role: "user", content: opts.user },
+        ],
+      }),
+      signal: AbortSignal.timeout(opts.timeoutMs),
+    });
+    if (!res.ok) {
+      throw new Error(`${opts.stageLabel} on ${model}: HTTP ${res.status}`);
+    }
+    return { data: await res.json(), latencyMs: Date.now() - start };
+  };
+
+  try {
+    const r = await attempt(opts.primaryModel);
+    const u = r.data?.usage || {};
+    sessionSpendUsd.total += estimateStageCostUsd(
+      opts.primaryModel, u.prompt_tokens || 0, u.completion_tokens || 0
+    );
+    return { data: r.data, modelUsed: opts.primaryModel, latencyMs: r.latencyMs, fellBack: false };
+  } catch (primaryErr) {
+    if (primaryErr instanceof BudgetExceededError) throw primaryErr;
+    // Fallback: retry the same stage on the other model via the same gateway.
+    if (BUDGET_CAP_USD > 0 && sessionSpendUsd.total >= BUDGET_CAP_USD) {
+      throw new BudgetExceededError(sessionSpendUsd.total, BUDGET_CAP_USD);
+    }
+    const r = await attempt(opts.fallbackModel);
+    const u = r.data?.usage || {};
+    sessionSpendUsd.total += estimateStageCostUsd(
+      opts.fallbackModel, u.prompt_tokens || 0, u.completion_tokens || 0
+    );
+    opts.fallbackEvents.push(
+      `${opts.stageLabel}: ${opts.primaryModel} failed (${primaryErr instanceof Error ? primaryErr.message : "error"}); retried on ${opts.fallbackModel} via Otari gateway`
+    );
+    return { data: r.data, modelUsed: opts.fallbackModel, latencyMs: r.latencyMs, fellBack: true };
+  }
+}
+
 export interface DualModelTriageResult {
   scenarioKey: string;
   incidentCode: string;
@@ -134,33 +240,23 @@ Analyze the following raw incident logs/alerts and return ONLY valid JSON matchi
 RAW LOGS:
 ${rawLogs}`;
 
-    const res1 = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${effectiveApiKey}`,
-      },
-      body: JSON.stringify({
-        model: model1,
-        temperature: 0.1,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an expert SRE incident classifier. Always respond with raw valid JSON only.",
-          },
-          { role: "user", content: stage1Prompt },
-        ],
-      }),
-      signal: AbortSignal.timeout(25000),
+    const fallbackEvents: string[] = [];
+    void startM1;
+    const call1 = await callGatewayWithFallback({
+      endpoint,
+      apiKey: effectiveApiKey,
+      primaryModel: model1,
+      fallbackModel: model2,
+      temperature: 0.1,
+      system:
+        "You are an expert SRE incident classifier. Always respond with raw valid JSON only.",
+      user: stage1Prompt,
+      timeoutMs: 25000,
+      stageLabel: "Stage 1 (classify)",
+      fallbackEvents,
     });
-
-    if (!res1.ok) {
-      throw new Error(`Stage 1 gateway returned HTTP ${res1.status}`);
-    }
-
-    const data1 = await res1.json();
-    const latencyM1 = Date.now() - startM1;
+    const data1 = call1.data;
+    const latencyM1 = call1.latencyMs;
     const rawContent1 = data1?.choices?.[0]?.message?.content || "{}";
     const parsed1 = safeParseJson(rawContent1);
 
@@ -211,33 +307,21 @@ Given the raw logs and Model 1 classification, return ONLY valid JSON matching t
 RAW LOGS:
 ${rawLogs}`;
 
-    const res2 = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${effectiveApiKey}`,
-      },
-      body: JSON.stringify({
-        model: model2,
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an expert Staff SRE remediation planner. Always respond with raw valid JSON only.",
-          },
-          { role: "user", content: stage2Prompt },
-        ],
-      }),
-      signal: AbortSignal.timeout(30000),
+    const call2 = await callGatewayWithFallback({
+      endpoint,
+      apiKey: effectiveApiKey,
+      primaryModel: model2,
+      fallbackModel: model1,
+      temperature: 0.2,
+      system:
+        "You are an expert Staff SRE remediation planner. Always respond with raw valid JSON only.",
+      user: stage2Prompt,
+      timeoutMs: 30000,
+      stageLabel: "Stage 2 (plan)",
+      fallbackEvents,
     });
-
-    if (!res2.ok) {
-      throw new Error(`Stage 2 gateway returned HTTP ${res2.status}`);
-    }
-
-    const data2 = await res2.json();
-    const latencyM2 = Date.now() - startM2;
+    const data2 = call2.data;
+    const latencyM2 = call2.latencyMs;
     const rawContent2 = data2?.choices?.[0]?.message?.content || "{}";
     const parsed2 = safeParseJson(rawContent2);
 
@@ -284,8 +368,16 @@ ${rawLogs}`;
         mode: "live",
         gatewayProvider: "Mozilla Otari / any-llm Live Gateway",
         endpointUrl: endpoint,
+        routingPolicy:
+          "stage-routed: classify->fast-instruct model, plan->code model; auto-fallback to the sibling model on failure",
+        fallbackEvents: fallbackEvents.length ? fallbackEvents : undefined,
+        budget: {
+          capUsd: BUDGET_CAP_USD > 0 ? BUDGET_CAP_USD : null,
+          sessionSpentUsd: Number(sessionSpendUsd.total.toFixed(6)),
+          exceeded: false,
+        },
         model1: {
-          id: model1,
+          id: call1.modelUsed,
           role: "Incident Summarizer & Severity Classifier",
           latencyMs: latencyM1,
           promptTokens:
@@ -294,10 +386,10 @@ ${rawLogs}`;
           completionTokens:
             data1?.usage?.completion_tokens ||
             baselineFallback.telemetry.model1.completionTokens,
-          status: "completed",
+          status: call1.fellBack ? "completed-via-fallback" : "completed",
         },
         model2: {
-          id: model2,
+          id: call2.modelUsed,
           role: "Root-Cause & Remediation Planner",
           latencyMs: latencyM2,
           promptTokens:
@@ -306,19 +398,28 @@ ${rawLogs}`;
           completionTokens:
             data2?.usage?.completion_tokens ||
             baselineFallback.telemetry.model2.completionTokens,
-          status: "completed",
+          status: call2.fellBack ? "completed-via-fallback" : "completed",
         },
         totalDurationMs: Date.now() - startTotal,
         timestampIso: new Date().toISOString(),
       },
     };
-  } catch {
-    // Graceful fallback if live endpoint fails or times out
+  } catch (err) {
+    const budgetHit = err instanceof BudgetExceededError;
+    // Graceful fallback if live endpoint fails, times out, or the key budget cap is hit
     return {
       ...baselineFallback,
       telemetry: {
         ...baselineFallback.telemetry,
         mode: "mock",
+        budget: {
+          capUsd: BUDGET_CAP_USD > 0 ? BUDGET_CAP_USD : null,
+          sessionSpentUsd: Number(sessionSpendUsd.total.toFixed(6)),
+          exceeded: budgetHit,
+        },
+        fallbackEvents: budgetHit
+          ? [`Budget cap enforced: live calls stopped at $${sessionSpendUsd.total.toFixed(4)} of $${BUDGET_CAP_USD.toFixed(2)}; served deterministic fallback instead of spending more.`]
+          : [`Live gateway call failed (${err instanceof Error ? err.message : "error"}); served deterministic fallback.`],
         gatewayProvider:
           "Mozilla Otari / any-llm Gateway (Auto-Fallback to Mock)",
         endpointUrl: endpoint,
